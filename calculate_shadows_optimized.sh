@@ -29,8 +29,8 @@ OUTPUT_DIR="./shadow_outputs_doy${DOY}"
 mkdir -p "$OUTPUT_DIR"
 
 # Processing settings
-# Use 85 cores for r.sun (much faster than 80)
-NPROCS=85
+# Use 88 cores for r.sun (much faster than 80)
+NPROCS=88
 
 # GDAL optimization
 export GDAL_CACHEMAX=8192
