@@ -158,7 +158,4 @@ Acknowledgements
 - GRASS GIS project — for `r.sun`, `r.slope.aspect`, `r.mapcalc`, `r.out.gdal`
 - GDAL — for GeoTIFF export and optimizations
 
-Contact / Maintainer
---------------------
-Maintainer: Your Name (replace in scripts and README)
-GitHub: https://github.com/<owner>/<repo> (replace)
+
