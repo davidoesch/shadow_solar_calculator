@@ -149,18 +149,13 @@ Recommendations / next improvements
 - Optionally add an aggregate step to combine shadow masks across time or produce daily shadow frequency rasters.
 - Consider using a GRASS session wrapper (e.g., start an interactive GRASS session and run commands) to reduce repeated mapset startup cost for many time steps.
 
-Contributing
-------------
-- Fork, create a feature branch, add changes, and open a pull request.
-- Please include small reproducible examples if you change behavior or add features.
-
 License
 -------
-Add license here — e.g., MIT. (If you want, tell me which license you prefer and I can add a LICENSE file.)
+MIT
 
 Acknowledgements
 ----------------
-- GRASS GIS project — for `r.sun`, `r.slope.aspect`, `r.mapcalc`, `r.out.gdal`, etc.
+- GRASS GIS project — for `r.sun`, `r.slope.aspect`, `r.mapcalc`, `r.out.gdal`
 - GDAL — for GeoTIFF export and optimizations
 
 Contact / Maintainer
