@@ -5,24 +5,12 @@ Collection of Bash scripts to create a GRASS GIS location from a DEM, precompute
 This repository contains three scripts:
 - `setup_grass_location.sh` — create a GRASS location from a georeferenced DEM and import the DEM (creates `dem_wgs84`, sets region, precomputes slope/aspect).
 - `calculate_shadows_loop.sh` — simple time-looped runner that calls `r.sun` for time steps and exports shadow masks and incidence rasters to GeoTIFF.
-- `calculate_shadows_optimized.sh` — an optimized, safer, and more featureful version tuned for machines with many cores and large memory (88 CPUs / 1 TB in the script example). Uses GDAL and TIFF optimizations and removes intermediate rasters to save space.
+- `calculate_shadows_optimized.sh` — an optimized, safer, and more featureful version tuned for machines with many cores and large memory (88 CPUs / 1 TB RAM in the script example, takes approx 8min for one run for swissALTIRegio). Uses GDAL and TIFF optimizations and removes intermediate rasters to save space.
 
-Table of contents
-- About
-- Requirements
-- Files & purpose
-- Quick start
-- Usage examples
-- Configuration / environment variables
-- Output format and naming
-- Performance tips
-- Troubleshooting
-- Contributing
-- License
 
 About
 -----
-These scripts automate a common workflow for producing per-time-step solar incidence and binary shadow masks using GRASS GIS `r.sun`. Typical use-cases include solar resource assessment, microclimate/shade analysis, and input layers for environmental modeling.
+These scripts automate a common workflow for producing per-time-step solar incidence and binary shadow masks using GRASS GIS `r.sun`. Typical use-cases include solar resource assessment, microclimate/shade analysis, and input layers for EO products.
 
 Requirements
 ------------
@@ -144,10 +132,12 @@ Troubleshooting
 
 Recommendations / next improvements
 ----------------------------------
+- Adapt it to LV95
 - Add a CLI parameter parser (getopts) to configure START_HOUR, END_HOUR, INTERVAL, NPROCS, OUTPUT_DIR without editing scripts.
 - Add unit tests / dry-run mode to validate configuration without launching heavy computation.
 - Optionally add an aggregate step to combine shadow masks across time or produce daily shadow frequency rasters.
 - Consider using a GRASS session wrapper (e.g., start an interactive GRASS session and run commands) to reduce repeated mapset startup cost for many time steps.
+  
 
 License
 -------
