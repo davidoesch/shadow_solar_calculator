@@ -16,8 +16,8 @@ GRASSDATA="$HOME/grassdata"
 LOCATION="swiss_project"
 MAPSET="PERMANENT"
 
-# Input DEM (should already be imported as dem_wgs84)
-DEM="dem_wgs84"
+# Input DEM (should already be imported as INPUT_DSM)
+DEM="INPUT_DSM"
 SLOPE="slope_deg"
 ASPECT="aspect_deg"
 

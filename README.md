@@ -50,7 +50,7 @@ Quick start
    chmod +x setup_grass_location.sh calculate_shadows_loop.sh calculate_shadows_optimized.sh
 
 2. Create a GRASS location and import DEM:
-   ./setup_grass_location.sh /path/to/your/dem.tif
+   ./setup_grass_location.sh /path/to/Thinout_highest_object_10m_LV95_LHN95_ref.tif
 
    - By default, the scripts use GRASS database at $HOME/grassdata and location `swiss_project`.
    - You can override GRASSDATA before running:

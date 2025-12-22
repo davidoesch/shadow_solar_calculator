@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script: calculate_shadows_optimized.sh
-# Optimized for high-core count systems (88 CPUs, 1TB RAM)
+# Optimized for high-core count systems (180 CPUs, 1TB RAM)
 # Usage: ./calculate_shadows_optimized.sh [day_of_year]
 # Example: ./calculate_shadows_optimized.sh 153
 
@@ -19,8 +19,8 @@ GRASSDATA="${GRASSDATA:-$HOME/grassdata}"
 LOCATION="swiss_project"
 MAPSET="PERMANENT"
 
-# Input DEM
-DEM="dem_wgs84"
+# Input DSM (renamed from dem_wgs84)
+INPUT_DSM="INPUT_DSM"
 SLOPE="slope_deg"
 ASPECT="aspect_deg"
 
@@ -29,12 +29,12 @@ OUTPUT_DIR="./shadow_outputs_doy${DOY}"
 mkdir -p "$OUTPUT_DIR"
 
 # Processing settings
-# Use 88 cores for r.sun (much faster than 80)
-NPROCS=88
+# Use 180 cores for r.sun (maximizing your server capacity)
+NPROCS=180
 
-# GDAL optimization
-export GDAL_CACHEMAX=8192
-export GDAL_NUM_THREADS=4
+# GDAL optimization for 1TB RAM system
+export GDAL_CACHEMAX=16384  # Increased from 8192
+export GDAL_NUM_THREADS=8   # Increased from 4
 
 # Time settings (UTC)
 START_HOUR=10
@@ -65,19 +65,21 @@ log_message "Time range: ${START_HOUR}:00 - ${END_HOUR}:00 UTC"
 log_message "Interval: ${INTERVAL_MINUTES} minutes"
 log_message "Output directory: $OUTPUT_DIR"
 log_message "CPU cores: $NPROCS"
+log_message "Input DSM: $INPUT_DSM"
 log_message "========================================"
 echo ""
 
 # Calculate slope and aspect once (if not already done)
 log_message "Checking for slope and aspect maps..."
 if ! grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.info -e map=$SLOPE &>/dev/null; then
-    log_message "Calculating slope and aspect from DEM..."
+    log_message "Calculating slope and aspect from DSM..."
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.slope.aspect \
-        elevation=$DEM \
+        elevation=$INPUT_DSM \
         slope=$SLOPE \
         aspect=$ASPECT \
         format=degrees \
         nprocs=$NPROCS \
+        memory=900000 \
         --overwrite
 else
     log_message "Slope and aspect maps already exist."
@@ -120,12 +122,13 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     
     # Output raster names
     INCIDENCE_MAP="solar_incidence_doy${DOY}_${TIME_STRING}"
+    INCIDENCE_8BIT="solar_incidence_8bit_doy${DOY}_${TIME_STRING}"
     BEAM_MAP="beam_rad_doy${DOY}_${TIME_STRING}"
     SHADOW_MAP="shadow_mask_doy${DOY}_${TIME_STRING}"
     
     # Run r.sun with all available cores
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.sun \
-        elevation=$DEM \
+        elevation=$INPUT_DSM \
         aspect=$ASPECT \
         slope=$SLOPE \
         day=$DOY \
@@ -140,7 +143,15 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
         "$SHADOW_MAP = if(isnull($INCIDENCE_MAP), 1, 0)" \
         --overwrite --quiet
     
-    # Export shadow mask with optimized compression
+    # Convert solar incidence angle to 8-bit (0-90 degrees -> 0-255)
+    # Incidence angles range from 0° (perpendicular) to 90° (horizon)
+    # Scale: 0-90° mapped to 0-255, with 255 reserved for nodata
+    # Formula: round(incidence * 255.0 / 90.0), capped at 254
+    grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
+        "$INCIDENCE_8BIT = if(isnull($INCIDENCE_MAP), 255, int(min(round($INCIDENCE_MAP * 255.0 / 90.0), 254)))" \
+        --overwrite --quiet
+    
+    # Export shadow mask with optimized compression (Byte type)
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.out.gdal \
         input=$SHADOW_MAP \
         output="$OUTPUT_DIR/shadow_mask_doy${DOY}_${TIME_STRING}.tif" \
@@ -149,20 +160,22 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
         createopt="$COMPRESS" \
         --overwrite --quiet
     
-    # Export solar incidence angle with optimized compression
+    # Export solar incidence angle as 8-bit with optimized compression
+    # Value 255 represents nodata (shadowed areas)
+    # Values 0-254 represent incidence angles scaled from 0-90 degrees
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.out.gdal \
-        input=$INCIDENCE_MAP \
-        output="$OUTPUT_DIR/solar_incidence_doy${DOY}_${TIME_STRING}.tif" \
+        input=$INCIDENCE_8BIT \
+        output="$OUTPUT_DIR/solar_incidence_8bit_doy${DOY}_${TIME_STRING}.tif" \
         format=GTiff \
-        type=Float32 \
+        type=Byte \
         createopt="$COMPRESS" \
-        nodata=-9999 \
+        nodata=255 \
         --overwrite --quiet
     
     # Clean up intermediate rasters to save space
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec g.remove -f \
         type=raster \
-        name=$BEAM_MAP,$INCIDENCE_MAP,$SHADOW_MAP \
+        name=$BEAM_MAP,$INCIDENCE_MAP,$INCIDENCE_8BIT,$SHADOW_MAP \
         2>/dev/null || true
     
     log_message "✓ Completed ${HOUR_PART}:${MINUTE_PART}"
@@ -186,10 +199,15 @@ log_message "========================================"
 echo ""
 log_message "Generated files summary:"
 SHADOW_COUNT=$(ls -1 "$OUTPUT_DIR"/shadow_mask_*.tif 2>/dev/null | wc -l)
-INCIDENCE_COUNT=$(ls -1 "$OUTPUT_DIR"/solar_incidence_*.tif 2>/dev/null | wc -l)
+INCIDENCE_COUNT=$(ls -1 "$OUTPUT_DIR"/solar_incidence_8bit_*.tif 2>/dev/null | wc -l)
 TOTAL_SIZE=$(du -sh "$OUTPUT_DIR" | cut -f1)
 
 log_message "  Shadow masks: $SHADOW_COUNT files"
-log_message "  Incidence maps: $INCIDENCE_COUNT files"
+log_message "  Incidence maps (8-bit): $INCIDENCE_COUNT files"
 log_message "  Total size: $TOTAL_SIZE"
 log_message "  Average time per step: $(echo "scale=2; $ELAPSED / ${#TIME_STEPS[@]}" | bc)s"
+echo ""
+log_message "Note: Solar incidence angles are scaled to 8-bit:"
+log_message "  Value 0-254: Incidence angle 0-90° (scaled)"
+log_message "  Value 255: No data (shadowed areas)"
+log_message "  To convert back: angle_degrees = (value * 90.0) / 255.0"
