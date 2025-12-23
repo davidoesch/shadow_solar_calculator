@@ -58,10 +58,11 @@ export GDAL_NUM_THREADS=8   # Increased from 4
 # To match a UTC satellite overpass time, add the CIVIL_TIME offset:
 # START_HOUR = UTC_satellite_time + CIVIL_TIME
 # 
-# Example for 10:00 UTC satellite overpass in summer:
-# START_HOUR = 10 + 2 = 12
-START_HOUR=10
-END_HOUR=11
+# Sentinel-2 overpass times: 10:00-11:00 UTC
+# For summer (UTC+2): START_HOUR = 10 + 2 = 12
+# For winter (UTC+1): START_HOUR = 10 + 1 = 11
+START_HOUR=12
+END_HOUR=13
 INTERVAL_MINUTES=2.0
 
 # Automatic time zone detection based on DOY
