@@ -4,7 +4,6 @@ Collection of Bash scripts to create a GRASS GIS location from a DEM, precompute
 
 This repository contains three scripts:
 - `setup_grass_location.sh` — create a GRASS location from a georeferenced DEM and import the DEM (creates `INPUT_DSM`, sets region, precomputes slope/aspect).
-- `calculate_shadows_loop.sh` — simple time-looped runner that calls `r.sun` for time steps and exports shadow masks and incidence rasters to GeoTIFF.
 - `calculate_shadows_optimized.sh` — an optimized, safer, and more featureful version tuned for machines with many cores and large memory (180 CPUs / 4 TB RAM in the script example, takes approx 8min for one run for swissALTIRegio). Uses GDAL and TIFF optimizations and removes intermediate rasters to save space.
 - `calculate_shadows_sunmask.sh` — only shadowmask, uses r.sunmask (SOLPOS algorithm) for UTC shadow calculation,r.sunmask uses SOLPOS algorithm with explicit timezone parameter tuned for machines with many cores and large memory (180 CPUs / 4 TB RAM in the script example
 
@@ -30,12 +29,6 @@ Files & purpose
   - Sets computational region to the DEM extent
   - Precalculates `slope_deg` and `aspect_deg`
 
-- calculate_shadows_loop.sh
-  - Lightweight looped implementation that:
-    - Checks/creates slope & aspect
-    - Runs `r.sun` for each time step between `START_HOUR` and `END_HOUR` at `INTERVAL_MINUTES`
-    - Writes shadow mask (`1` = shadow, `0` = illuminated) and solar incidence GeoTIFFs into `./shadow_outputs_doy<DOY>/`
-
 - calculate_shadows_optimized.sh
   - Robust version with:
     - `set -euo pipefail`
@@ -45,7 +38,7 @@ Files & purpose
     - Cleanup of intermediate rasters to reduce storage usage
     - Summary statistics (file counts, total size, average time per step)
    
-  - calculate_shadows_sunmask.sh
+- calculate_shadows_sunmask.sh
     - Robust version with:
       - Only shadowmask
       - `set -euo pipefail`
@@ -58,7 +51,7 @@ Files & purpose
 Quick start
 -----------
 1. Make scripts executable:
-   chmod +x setup_grass_location.sh calculate_shadows_loop.sh calculate_shadows_optimized.sh calculate_shadows_sunmask.sh
+   chmod +x setup_grass_location.sh calculate_shadows_optimized.sh calculate_shadows_sunmask.sh
 
 2. Create a GRASS location and import DEM:
    ./setup_grass_location.sh /path/to/Thinout_highest_object_10m_LV95_LHN95_ref.tif
@@ -75,9 +68,6 @@ Quick start
 
 Usage examples
 --------------
-- Run loop version for DOY 153:
-  ./calculate_shadows_loop.sh 153
-
 - Run optimized version for DOY 200:
   ./calculate_shadows_optimized.sh 200
 
