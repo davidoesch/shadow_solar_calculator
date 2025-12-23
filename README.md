@@ -3,7 +3,7 @@
 Collection of Bash scripts to create a GRASS GIS location from a DEM, precompute slope/aspect, and calculate solar incidence / shadow masks for given day(s) and time ranges using r.sun.
 
 This repository contains three scripts:
-- `setup_grass_location.sh` — create a GRASS location from a georeferenced DEM and import the DEM (creates `dem_wgs84`, sets region, precomputes slope/aspect).
+- `setup_grass_location.sh` — create a GRASS location from a georeferenced DEM and import the DEM (creates `INPUT_DEM`, sets region, precomputes slope/aspect).
 - `calculate_shadows_loop.sh` — simple time-looped runner that calls `r.sun` for time steps and exports shadow masks and incidence rasters to GeoTIFF.
 - `calculate_shadows_optimized.sh` — an optimized, safer, and more featureful version tuned for machines with many cores and large memory (88 CPUs / 1 TB RAM in the script example, takes approx 8min for one run for swissALTIRegio). Uses GDAL and TIFF optimizations and removes intermediate rasters to save space.
 
@@ -25,7 +25,7 @@ Files & purpose
 ----------------
 - setup_grass_location.sh
   - Creates `$GRASSDATA` (default: `$HOME/grassdata`) and a `swiss_project` location
-  - Imports a georeferenced DEM as `dem_wgs84`
+  - Imports a georeferenced DEM as `INPUT_DEM`
   - Sets computational region to the DEM extent
   - Precalculates `slope_deg` and `aspect_deg`
 
@@ -84,7 +84,7 @@ Configuration / important variables
 - GRASSDATA — GRASS database path, default `$HOME/grassdata` (can be exported in environment)
 - LOCATION — GRASS location name (default: `swiss_project`)
 - MAPSET — GRASS mapset (default: `PERMANENT`)
-- DEM — raster name used inside GRASS (`dem_wgs84` by default)
+- DEM — raster name used inside GRASS (`INPUT_DEM` by default)
 - SLOPE / ASPECT — derived rasters names (`slope_deg`, `aspect_deg`)
 - NPROCS — cores passed to r.sun / r.slope.aspect (set according to your CPU count)
 - GDAL_CACHEMAX, GDAL_NUM_THREADS — GDAL tuning (in optimized script)
@@ -125,7 +125,7 @@ Troubleshooting
 - Permission errors writing output:
   - Check that the current user has write permissions to the working directory and $GRASSDATA.
 - r.sun fails or returns zeros/nulls:
-  - Confirm `dem_wgs84`, `slope_deg`, `aspect_deg` exist inside the GRASS mapset.
+  - Confirm `INPUT_DEM`, `slope_deg`, `aspect_deg` exist inside the GRASS mapset.
   - Run a single r.sun call interactively inside the GRASS session to debug parameters.
 - Time precision/loop rounding:
   - If you see odd minute strings (due to floating point), reduce floating point usage or adjust INTERVAL_MINUTES to integer-minute intervals.
