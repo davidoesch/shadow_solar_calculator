@@ -108,6 +108,166 @@ Notes on time formatting:
 - Time string is created from a floating-hour value; e.g., 10.00 -> 1000, 10.25 -> 1025.
 - The scripts calculate INTERVAL_HOURS = INTERVAL_MINUTES / 60 and loop from START_HOUR to END_HOUR (exclusive).
 
+# Quick Guide: Matching Satellite Overpass Times
+
+## Your Configuration
+✅ **Script is configured for Sentinel-2 UTC times (10:00-11:00 UTC)**
+✅ **Automatic time zone detection** (summer/winter)
+✅ **2-minute intervals**
+
+**Default Settings**: START_HOUR=12, END_HOUR=13
+- Summer (UTC+2): Processes **10:00-11:00 UTC** ✅
+- Winter (UTC+1): Change to START_HOUR=11, END_HOUR=12 for **10:00-11:00 UTC**
+
+---
+
+## How It Works
+
+### Automatic Time Zone Detection
+The script automatically sets `CIVIL_TIME` based on your Day of Year (DOY):
+
+| DOY Range | Season | Time Zone | UTC Offset | CIVIL_TIME |
+|-----------|--------|-----------|------------|------------|
+| 80-304 | Summer | CEST | UTC+2 | 2 |
+| 1-79, 305-365 | Winter | CET | UTC+1 | 1 |
+
+**DOY 153** (June 2) → **Summer** → **UTC+2**
+
+---
+
+## Converting Satellite UTC Times
+
+### The Formula
+```
+START_HOUR = UTC_satellite_time + CIVIL_TIME
+```
+
+### Examples for Summer (DOY 153, CIVIL_TIME=2)
+
+| Satellite UTC Time | START_HOUR | END_HOUR | Command |
+|-------------------|------------|----------|---------|
+| 08:00 UTC | 10 | 11 | Edit script: `START_HOUR=10 END_HOUR=11` |
+| 09:00 UTC | 11 | 12 | Edit script: `START_HOUR=11 END_HOUR=12` |
+| 10:00 UTC | 12 | 13 | `./calculate_shadows_optimized.sh 153` **(default - Sentinel-2)** ✅ |
+| 10:30 UTC | 12.5 | 13.5 | Edit script: `START_HOUR=12.5 END_HOUR=13.5` |
+
+### Examples for Winter (DOY 50, CIVIL_TIME=1)
+
+| Satellite UTC Time | START_HOUR | END_HOUR | Command |
+|-------------------|------------|----------|---------|
+| 09:00 UTC | 10 | 11 | Edit script: `START_HOUR=10 END_HOUR=11` |
+| 10:00 UTC | 11 | 12 | Edit script: `START_HOUR=11 END_HOUR=12` **(Sentinel-2)** ✅ |
+
+---
+
+## Quick Start for Your Sentinel-2 Data
+
+### Your Sentinel-2 Overpass Time
+**10:00-11:00 UTC** (typical Sentinel-2 timestamp: "2025-12-23 10:11:29")
+
+### For Summer Days (DOY 80-304, like DOY 153)
+```
+DOY 153 = Summer = CIVIL_TIME = 2
+START_HOUR = 10 (UTC time) + 2 (offset) = 12 ✅ (already set as default)
+END_HOUR = 11 (UTC time) + 2 (offset) = 13 ✅ (already set as default)
+```
+
+### For Winter Days (DOY 1-79, 305-365)
+Edit the script and change lines 61-62:
+```bash
+START_HOUR=11
+END_HOUR=12
+```
+
+### Run the Script
+```bash
+./calculate_shadows_optimized.sh 153  # For summer (DOY 153)
+./calculate_shadows_optimized.sh 50   # For winter (DOY 50) - remember to edit START_HOUR first!
+```
+
+---
+
+## Output Files
+
+Files will be named with **both** local and UTC times:
+```
+shadow_mask_doy153_1200_UTC1000.tif
+solar_incidence_8bit_doy153_1200_UTC1000.tif
+```
+
+This makes it easy to verify you have the correct Sentinel-2 time (10:00 UTC)!
+
+---
+
+## Verification
+
+When the script runs, check the log output:
+```
+Time zone: UTC+2 (summer)
+Local time range: 12:00 - 13:00
+UTC time range: 10:00 - 11:00 (for satellite matching)
+```
+
+The UTC time range should **match your Sentinel-2 overpass time (10:00-11:00 UTC)**. ✅
+
+---
+
+## Common Satellite Platforms
+
+### Landsat 8/9
+- Overpass time: ~10:00-11:00 UTC (similar to Sentinel-2)
+- For Switzerland summer: ~12:00-13:00 local
+- Set: `START_HOUR=12 END_HOUR=13` (same as default)
+
+### Sentinel-2 ✅ (YOUR DATA)
+- **Overpass time: 10:00-11:00 UTC**
+- For Switzerland summer: 12:00-13:00 local (UTC+2)
+- For Switzerland winter: 11:00-12:00 local (UTC+1)
+- **Summer setting: `START_HOUR=12 END_HOUR=13`** (default) ✅
+- **Winter setting: `START_HOUR=11 END_HOUR=12`** (edit script)
+
+### MODIS Terra
+- Overpass time: ~10:30 AM local time
+- For Switzerland summer: ~08:30 UTC
+- Set: `START_HOUR=10.5 END_HOUR=11.5`
+
+### MODIS Aqua
+- Overpass time: ~01:30 PM local time
+- For Switzerland summer: ~11:30 UTC
+- Set: `START_HOUR=13.5 END_HOUR=14.5`
+
+---
+
+## Troubleshooting
+
+### My UTC times look wrong
+Check your DOY season detection:
+- DOY 80-304 → Summer (UTC+2)
+- DOY 1-79, 305-365 → Winter (UTC+1)
+
+### I need times before 00:00 UTC
+For early morning UTC times in summer (e.g., 00:30 UTC = 02:30 local):
+```bash
+START_HOUR=2.5
+END_HOUR=3.5
+```
+
+### Output filename shows wrong UTC time
+The filename UTC time is calculated as: `LOCAL_TIME - CIVIL_TIME`
+If it doesn't match your satellite time, adjust `START_HOUR`.
+
+---
+
+## Summary
+
+✅ **Configured for Sentinel-2 (10:00-11:00 UTC)**  
+✅ **No manual time zone configuration needed** - automatic detection  
+✅ **Default settings** match Sentinel-2 in summer (START_HOUR=12)  
+✅ **For winter**: Change to START_HOUR=11, END_HOUR=12  
+✅ **Filenames include both local and UTC times** for easy verification  
+
+**For DOY 153 (June 2) with default settings, you're processing 10:00-11:00 UTC** ✅
+
 Performance tips
 ----------------
 - Use `calculate_shadows_optimized.sh` on multi-core systems. Tune:
