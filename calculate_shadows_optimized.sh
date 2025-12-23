@@ -185,7 +185,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     SHADOW_MAP="shadow_mask_doy${DOY}_UTC${TIME_STRING}"
     
     # Run r.sun with all available cores and civil_time parameter
-    # CRITICAL: civil_time requires lon_in and lat_in parameters
+    # CRITICAL: civil_time requires lon and lat parameters
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.sun \
         elevation=$INPUT_DSM \
         aspect=$ASPECT \
@@ -193,8 +193,8 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
         day=$DOY \
         time=$CURRENT_TIME \
         civil_time=$CIVIL_TIME \
-        lon_in=$LONGITUDE_MAP \
-        lat_in=$LATITUDE_MAP \
+        lon=$LONGITUDE_MAP \
+        lat=$LATITUDE_MAP \
         beam_rad=$BEAM_MAP \
         incidout=$INCIDENCE_MAP \
         nprocs=$NPROCS \
