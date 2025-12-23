@@ -5,6 +5,7 @@ Collection of Bash scripts to create a GRASS GIS location from a DEM, precompute
 This repository contains three scripts:
 - `setup_grass_location.sh` — create a GRASS location from a georeferenced DEM and import the DEM (creates `INPUT_DSM`, sets region, precomputes slope/aspect).
 - `calculate_shadows_optimized.sh` — an optimized, safer, and more featureful version tuned for machines with many cores and large memory (180 CPUs / 4 TB RAM in the script example, takes approx 8min for one run for swissALTIRegio). Uses GDAL and TIFF optimizations and removes intermediate rasters to save space.
+-  `calculate_shadows_PARALLEL_OPTIMIZED.sh ` as Above but highly parallelized and with the use of RAMDISK
 - `calculate_shadows_sunmask.sh` — only shadowmask, uses r.sunmask (SOLPOS algorithm) for UTC shadow calculation,r.sunmask uses SOLPOS algorithm with explicit timezone parameter tuned for machines with many cores and large memory (180 CPUs / 4 TB RAM in the script example
 
 
@@ -47,11 +48,15 @@ Files & purpose
       - Explicit core (NPROCS) and GDAL tuning (GDAL_CACHEMAX, GDAL_NUM_THREADS)
       - Cleanup of intermediate rasters to reduce storage usage
       - Summary statistics (file counts, total size, average time per step)
+     
+- calculate_shadows_PARALLEL_OPTIMIZED.sh
+  - as above but with RAMDISK and parallelized
+  - ./calculate_shadows_PARALLEL_OPTIMIZED.sh [day_of_year] [use_ramdisk]
 
 Quick start
 -----------
 1. Make scripts executable:
-   chmod +x setup_grass_location.sh calculate_shadows_optimized.sh calculate_shadows_sunmask.sh
+   chmod +x setup_grass_location.sh calculate_shadows_optimized.sh calculate_shadows_sunmask.sh calculate_shadows_PARALLEL_OPTIMIZED.sh
 
 2. Create a GRASS location and import DEM:
    ./setup_grass_location.sh /path/to/Thinout_highest_object_10m_LV95_LHN95_ref.tif
@@ -70,6 +75,9 @@ Usage examples
 --------------
 - Run optimized version for DOY 200:
   ./calculate_shadows_optimized.sh 200
+
+- Run PARALLEL with RAMDISK optimized version for DOY 200:
+  ./calculate_shadows_PARALLEL_OPTIMIZED.sh 153 yes
 
 - Use a custom GRASS database location:
   export GRASSDATA=/mnt/grassdata
