@@ -171,12 +171,18 @@ START_TIME=$(date +%s)
 # Process each time step
 for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     
-    # Format time for output filename
-    HOUR_PART=$(printf "%02d" $(echo "$CURRENT_TIME" | awk '{print int($1)}'))
-    MINUTE_PART=$(echo "$CURRENT_TIME" | awk '{mins=($1-int($1))*60; printf "%02d", mins}')
+    # FIXED: Format time for output filename - properly calculate minutes
+    # Extract hour part (integer)
+    HOUR_PART=$(echo "$CURRENT_TIME" | awk '{print int($1)}')
+    HOUR_PART=$(printf "%02d" $HOUR_PART)
+    
+    # Calculate minutes from decimal fraction
+    # (CURRENT_TIME - integer_hour) * 60 gives minutes
+    MINUTE_PART=$(echo "$CURRENT_TIME" | awk '{mins=($1-int($1))*60; printf "%02d", int(mins+0.5)}')
+    
     TIME_STRING="${HOUR_PART}${MINUTE_PART}"
     
-    log_message "Processing: UTC ${HOUR_PART}:${MINUTE_PART} (DOY=$DOY)"
+    log_message "Processing: UTC ${HOUR_PART}:${MINUTE_PART} (DOY=$DOY, decimal time=$CURRENT_TIME)"
     
     # Output raster names
     INCIDENCE_MAP="solar_incidence_doy${DOY}_UTC${TIME_STRING}"
