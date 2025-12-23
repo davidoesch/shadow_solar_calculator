@@ -1,25 +1,8 @@
 #!/bin/bash
 # Script: calculate_shadows_optimized.sh
 # Optimized for high-core count systems (180 CPUs, 1TB RAM)
-# CONFIGURED FOR: Satellite overpass time matching (UTC times)
 # Usage: ./calculate_shadows_optimized.sh [day_of_year]
 # Example: ./calculate_shadows_optimized.sh 153
-#
-# TIME ZONE CONFIGURATION:
-# ========================
-# This script is configured for matching satellite overpass times (given in UTC).
-# The CIVIL_TIME parameter is automatically set based on the day of year:
-# - Summer (DOY 80-304): CIVIL_TIME=2 (CEST = UTC+2)
-# - Winter (DOY 1-79, 305-365): CIVIL_TIME=1 (CET = UTC+1)
-#
-# HOW TO USE WITH UTC SATELLITE TIMES:
-# ====================================
-# If your satellite overpass is at 10:30 UTC and it's summer (DOY 153):
-# - CIVIL_TIME will be automatically set to 2 (UTC+2)
-# - To run at 10:30 UTC, set: START_HOUR=12.5 (10.5 + 2 hours = 12.5)
-# - Or use the formula: START_HOUR = UTC_time + CIVIL_TIME
-#
-# The script will automatically detect summer/winter based on DOY.
 
 set -euo pipefail
 
@@ -53,33 +36,13 @@ NPROCS=180
 export GDAL_CACHEMAX=16384  # Increased from 8192
 export GDAL_NUM_THREADS=8   # Increased from 4
 
-# Time settings
-# IMPORTANT: These are LOCAL SWISS TIMES (will be converted to match UTC satellite times)
-# To match a UTC satellite overpass time, add the CIVIL_TIME offset:
-# START_HOUR = UTC_satellite_time + CIVIL_TIME
-# 
-# Sentinel-2 overpass times: 10:00-11:00 UTC
-# For summer (UTC+2): START_HOUR = 10 + 2 = 12
-# For winter (UTC+1): START_HOUR = 10 + 1 = 11
-START_HOUR=12
-END_HOUR=13
-INTERVAL_MINUTES=2.0
+# Time settings (UTC)
+START_HOUR=10
+END_HOUR=11
+INTERVAL_MINUTES=2
 
-# Automatic time zone detection based on DOY
-# Switzerland time zones:
-# - Summer (CEST): UTC+2 (approximately DOY 80-304: March 21 - October 31)
-# - Winter (CET): UTC+1 (approximately DOY 1-79, 305-365)
-if [ "$DOY" -ge 80 ] && [ "$DOY" -le 304 ]; then
-    CIVIL_TIME=2  # Summer (CEST = UTC+2)
-    SEASON="summer"
-else
-    CIVIL_TIME=1  # Winter (CET = UTC+1)
-    SEASON="winter"
-fi
-
-# Calculate actual UTC times being processed
-UTC_START=$(echo "$START_HOUR - $CIVIL_TIME" | bc)
-UTC_END=$(echo "$END_HOUR - $CIVIL_TIME" | bc)
+# CRITICAL: civil_time=0 for UTC (no timezone offset)
+CIVIL_TIME=0
 
 # Compression settings - ZSTD is much faster than LZW
 COMPRESS="COMPRESS=ZSTD,ZLEVEL=1,TILED=YES,BLOCKXSIZE=512,BLOCKYSIZE=512"
@@ -97,13 +60,11 @@ log_message() {
 # ============================================
 
 log_message "========================================"
-log_message "Shadow Calculation for Satellite Matching"
+log_message "Optimized Shadow Calculation Script"
 log_message "========================================"
-log_message "Day of Year: $DOY ($SEASON)"
+log_message "Day of Year: $DOY"
 log_message "Year: $YEAR"
-log_message "Time zone: UTC+${CIVIL_TIME} (${SEASON} time)"
-log_message "Local time range: ${START_HOUR}:00 - ${END_HOUR}:00"
-log_message "UTC time range: ${UTC_START}:00 - ${UTC_END}:00 (for satellite matching)"
+log_message "Time range: ${START_HOUR}:00 - ${END_HOUR}:00 UTC"
 log_message "Interval: ${INTERVAL_MINUTES} minutes"
 log_message "Output directory: $OUTPUT_DIR"
 log_message "CPU cores: $NPROCS"
@@ -160,12 +121,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     MINUTE_PART=$(echo "$CURRENT_TIME" | awk '{mins=($1-int($1))*60; printf "%02d", mins}')
     TIME_STRING="${HOUR_PART}${MINUTE_PART}"
     
-    # Calculate UTC time for this step
-    UTC_TIME=$(echo "$CURRENT_TIME - $CIVIL_TIME" | bc)
-    UTC_HOUR=$(printf "%02d" $(echo "$UTC_TIME" | awk '{print int($1)}'))
-    UTC_MINUTE=$(echo "$UTC_TIME" | awk '{mins=($1-int($1))*60; printf "%02d", mins}')
-    
-    log_message "Processing: Local=${HOUR_PART}:${MINUTE_PART}, UTC=${UTC_HOUR}:${UTC_MINUTE} (DOY=$DOY)"
+    log_message "Processing: DOY=$DOY, Time=$CURRENT_TIME UTC (${HOUR_PART}:${MINUTE_PART})"
     
     # Output raster names
     INCIDENCE_MAP="solar_incidence_doy${DOY}_${TIME_STRING}"
@@ -173,7 +129,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     BEAM_MAP="beam_rad_doy${DOY}_${TIME_STRING}"
     SHADOW_MAP="shadow_mask_doy${DOY}_${TIME_STRING}"
     
-    # Run r.sun with all available cores and civil_time parameter
+    # Run r.sun with all available cores
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.sun \
         elevation=$INPUT_DSM \
         aspect=$ASPECT \
@@ -193,7 +149,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     
     # Convert solar incidence angle to 8-bit (0-90 degrees -> 0-255)
     # Incidence angles range from 0° (perpendicular) to 90° (horizon)
-    # Scale: 0-90° mapped to 0-254, with 255 reserved for nodata
+    # Scale: 0-90° mapped to 0-255, with 255 reserved for nodata
     # Formula: round(incidence * 255.0 / 90.0), capped at 254
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
         "$INCIDENCE_8BIT = if(isnull($INCIDENCE_MAP), 255, int(min(round($INCIDENCE_MAP * 255.0 / 90.0), 254)))" \
@@ -202,7 +158,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     # Export shadow mask with optimized compression (Byte type)
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.out.gdal \
         input=$SHADOW_MAP \
-        output="$OUTPUT_DIR/shadow_mask_doy${DOY}_${TIME_STRING}_UTC${UTC_HOUR}${UTC_MINUTE}.tif" \
+        output="$OUTPUT_DIR/shadow_mask_doy${DOY}_${TIME_STRING}.tif" \
         format=GTiff \
         type=Byte \
         createopt="$COMPRESS" \
@@ -213,7 +169,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     # Values 0-254 represent incidence angles scaled from 0-90 degrees
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.out.gdal \
         input=$INCIDENCE_8BIT \
-        output="$OUTPUT_DIR/solar_incidence_8bit_doy${DOY}_${TIME_STRING}_UTC${UTC_HOUR}${UTC_MINUTE}.tif" \
+        output="$OUTPUT_DIR/solar_incidence_8bit_doy${DOY}_${TIME_STRING}.tif" \
         format=GTiff \
         type=Byte \
         createopt="$COMPRESS" \
@@ -226,7 +182,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
         name=$BEAM_MAP,$INCIDENCE_MAP,$INCIDENCE_8BIT,$SHADOW_MAP \
         2>/dev/null || true
     
-    log_message "✓ Completed Local=${HOUR_PART}:${MINUTE_PART} UTC=${UTC_HOUR}:${UTC_MINUTE}"
+    log_message "✓ Completed ${HOUR_PART}:${MINUTE_PART}"
     
 done
 
@@ -254,17 +210,6 @@ log_message "  Shadow masks: $SHADOW_COUNT files"
 log_message "  Incidence maps (8-bit): $INCIDENCE_COUNT files"
 log_message "  Total size: $TOTAL_SIZE"
 log_message "  Average time per step: $(echo "scale=2; $ELAPSED / ${#TIME_STEPS[@]}" | bc)s"
-echo ""
-log_message "========================================"
-log_message "Satellite Matching Information"
-log_message "========================================"
-log_message "Time zone used: UTC+${CIVIL_TIME} ($SEASON)"
-log_message "Local time processed: ${START_HOUR}:00 - ${END_HOUR}:00"
-log_message "UTC time processed: ${UTC_START}:00 - ${UTC_END}:00"
-log_message ""
-log_message "Output filenames include both local and UTC times:"
-log_message "Format: *_doy${DOY}_HHMM_UTCHHMM.tif"
-log_message "========================================"
 echo ""
 log_message "Note: Solar incidence angles are scaled to 8-bit:"
 log_message "  Value 0-254: Incidence angle 0-90° (scaled)"
