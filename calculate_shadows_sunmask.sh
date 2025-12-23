@@ -100,9 +100,9 @@ NUM_STEPS=$(echo "scale=0; ($UTC_END_HOUR - $UTC_START_HOUR) / $INTERVAL_HOURS" 
 for ((i=0; i<NUM_STEPS; i++)); do
     CURRENT_HOUR_DEC=$(echo "scale=6; $UTC_START_HOUR + ($i * $INTERVAL_HOURS)" | bc)
     
-    # Split into hour and minute for r.sunmask
+    # FIXED: Split into hour and minute for r.sunmask with proper rounding
     HOUR=$(echo "$CURRENT_HOUR_DEC" | awk '{print int($1)}')
-    MINUTE=$(echo "$CURRENT_HOUR_DEC" | awk '{mins=($1-int($1))*60; printf "%d", mins}')
+    MINUTE=$(echo "$CURRENT_HOUR_DEC" | awk '{mins=($1-int($1))*60; printf "%d", int(mins+0.5)}')
     
     TIME_STEPS+=("$HOUR:$MINUTE")
 done
