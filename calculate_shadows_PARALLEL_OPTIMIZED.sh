@@ -1,17 +1,18 @@
 #!/bin/bash
-# Script: calculate_shadows_PARALLEL_OPTIMIZED.sh
-# FULLY OPTIMIZED for 180 CPUs, 1TB RAM with parallel processing
-# Processes MULTIPLE timesteps simultaneously for massive speedup!
+# Script: calculate_shadows_PARALLEL_OPTIMIZED_v2.sh
+# IMPROVED VERSION: Uses symlinks instead of copying full GRASS databases
+# Optimized for 180 CPUs, 1TB RAM with parallel processing
+# MUCH LOWER disk/RAM usage!
 # 
 # Features:
 # - Parallel timestep processing (6 simultaneous jobs)
-# - Optional RAMDisk support for extreme speed
+# - Shared GRASS database (no duplication!)
+# - Optional RAMDisk support
 # - Optimized GDAL/GRASS settings
-# - Progress monitoring
 #
-# Usage: ./calculate_shadows_PARALLEL_OPTIMIZED.sh [day_of_year] [use_ramdisk]
-# Example: ./calculate_shadows_PARALLEL_OPTIMIZED.sh 153 yes
-# Example: ./calculate_shadows_PARALLEL_OPTIMIZED.sh 153 no
+# Usage: ./calculate_shadows_PARALLEL_OPTIMIZED_v2.sh [day_of_year] [use_ramdisk]
+# Example: ./calculate_shadows_PARALLEL_OPTIMIZED_v2.sh 153 yes
+# Example: ./calculate_shadows_PARALLEL_OPTIMIZED_v2.sh 153 no
 
 set -euo pipefail
 
@@ -30,6 +31,7 @@ CPUS_PER_JOB=$((180 / NUM_PARALLEL_JOBS))  # 30 CPUs per job
 # GRASS GIS paths
 if [[ "$USE_RAMDISK" == "yes" ]]; then
     GRASSDATA="/mnt/ramdisk/grassdata"
+    RAMDISK_SIZE="200G"  # Increased size to handle multiple workers
     echo "===> Using RAMDisk: $GRASSDATA"
 else
     GRASSDATA="${GRASSDATA:-$HOME/grassdata}"
@@ -73,9 +75,11 @@ process_timestep() {
     local DOY=$2
     local WORKER_ID=$3
     
-    # Use separate GRASS location for this worker to avoid locks
+    # All workers share the SAME GRASS location (read-only for input data)
+    # Only output rasters are unique per worker
     local WORKER_GRASSDATA="$GRASSDATA"
-    local WORKER_LOCATION="${LOCATION}_worker${WORKER_ID}"
+    local WORKER_LOCATION="$LOCATION"
+    local WORKER_MAPSET="worker${WORKER_ID}"
     
     # Extract hour and minute
     local HOUR_PART=$(echo "$CURRENT_TIME" | awk '{print int($1)}')
@@ -92,16 +96,16 @@ process_timestep() {
     local BEAM_MAP="beam_rad_w${WORKER_ID}_${TIME_STRING}"
     local SHADOW_MAP="shadow_mask_w${WORKER_ID}_${TIME_STRING}"
     
-    # Run r.sun with worker-specific CPU allocation
-    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.sun \
-        elevation=$INPUT_DSM \
-        aspect=$ASPECT \
-        slope=$SLOPE \
+    # Run r.sun - it will read from PERMANENT mapset, write to worker mapset
+    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$WORKER_MAPSET" --exec r.sun \
+        elevation=$INPUT_DSM@PERMANENT \
+        aspect=$ASPECT@PERMANENT \
+        slope=$SLOPE@PERMANENT \
         day=$DOY \
         time=$CURRENT_TIME \
         civil_time=$CIVIL_TIME \
-        lon=longitude_raster \
-        lat=latitude_raster \
+        lon=longitude_raster@PERMANENT \
+        lat=latitude_raster@PERMANENT \
         beam_rad=$BEAM_MAP \
         incidout=$INCIDENCE_MAP \
         nprocs=$CPUS_PER_JOB \
@@ -109,17 +113,17 @@ process_timestep() {
         --overwrite --quiet 2>/dev/null
     
     # Create shadow mask
-    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.mapcalc \
+    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$WORKER_MAPSET" --exec r.mapcalc \
         "$SHADOW_MAP = if(isnull($INCIDENCE_MAP), 1, 0)" \
         --overwrite --quiet 2>/dev/null
     
     # Convert to 8-bit
-    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.mapcalc \
+    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$WORKER_MAPSET" --exec r.mapcalc \
         "$INCIDENCE_8BIT = if(isnull($INCIDENCE_MAP), 255, int(min(round($INCIDENCE_MAP * 255.0 / 90.0), 254)))" \
         --overwrite --quiet 2>/dev/null
     
     # Export shadow mask
-    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.out.gdal \
+    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$WORKER_MAPSET" --exec r.out.gdal \
         input=$SHADOW_MAP \
         output="$OUTPUT_DIR/shadow_mask_doy${DOY}_UTC${TIME_STRING}.tif" \
         format=GTiff \
@@ -128,7 +132,7 @@ process_timestep() {
         --overwrite --quiet 2>/dev/null
     
     # Export solar incidence
-    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.out.gdal \
+    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$WORKER_MAPSET" --exec r.out.gdal \
         input=$INCIDENCE_8BIT \
         output="$OUTPUT_DIR/solar_incidence_8bit_doy${DOY}_UTC${TIME_STRING}.tif" \
         format=GTiff \
@@ -138,7 +142,7 @@ process_timestep() {
         --overwrite --quiet 2>/dev/null
     
     # Clean up
-    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec g.remove -f \
+    grass "$WORKER_GRASSDATA/$WORKER_LOCATION/$WORKER_MAPSET" --exec g.remove -f \
         type=raster \
         name=$BEAM_MAP,$INCIDENCE_MAP,$INCIDENCE_8BIT,$SHADOW_MAP \
         2>/dev/null || true
@@ -156,7 +160,7 @@ export GRASSDATA LOCATION MAPSET INPUT_DSM SLOPE ASPECT DOY CIVIL_TIME OUTPUT_DI
 # ============================================
 
 log_message "========================================"
-log_message "PARALLEL Shadow Calculation (OPTIMIZED)"
+log_message "PARALLEL Shadow Calculation v2 (IMPROVED)"
 log_message "========================================"
 log_message "Day of Year: $DOY"
 log_message "Parallel jobs: $NUM_PARALLEL_JOBS"
@@ -164,6 +168,7 @@ log_message "CPUs per job: $CPUS_PER_JOB"
 log_message "Total CPUs: 180"
 log_message "RAMDisk: $USE_RAMDISK"
 log_message "GDAL Cache: 32GB"
+log_message "Method: Shared GRASS database (no duplication!)"
 log_message "========================================"
 echo ""
 
@@ -173,33 +178,62 @@ if [[ "$USE_RAMDISK" == "yes" ]]; then
     
     if ! mountpoint -q /mnt/ramdisk; then
         sudo mkdir -p /mnt/ramdisk
-        sudo mount -t tmpfs -o size=100G tmpfs /mnt/ramdisk
-        log_message "RAMDisk mounted: 100GB at /mnt/ramdisk"
+        sudo mount -t tmpfs -o size=$RAMDISK_SIZE tmpfs /mnt/ramdisk
+        log_message "RAMDisk mounted: $RAMDISK_SIZE at /mnt/ramdisk"
     else
         log_message "RAMDisk already mounted"
+        df -h /mnt/ramdisk
     fi
     
-    # Copy GRASS database to RAMDisk
+    # Copy GRASS database to RAMDisk (only ONCE!)
     if [[ ! -d "$GRASSDATA/$LOCATION" ]]; then
         log_message "Copying GRASS database to RAMDisk..."
         mkdir -p "$GRASSDATA"
+        
+        # Check source size
+        SOURCE_SIZE=$(du -sh "$HOME/grassdata/$LOCATION" | cut -f1)
+        log_message "Source GRASS database size: $SOURCE_SIZE"
+        
         cp -r "$HOME/grassdata/$LOCATION" "$GRASSDATA/"
         log_message "GRASS database copied to RAMDisk"
+        
+        # Show RAMDisk usage
+        df -h /mnt/ramdisk
+    else
+        log_message "GRASS database already in RAMDisk"
     fi
 fi
 
-# Create worker locations (separate GRASS databases to avoid locks)
-log_message "Creating worker GRASS locations..."
+# Create worker mapsets (lightweight - no data duplication!)
+log_message "Creating worker mapsets..."
 for ((i=1; i<=NUM_PARALLEL_JOBS; i++)); do
-    WORKER_LOCATION="${LOCATION}_worker${i}"
-    if [[ ! -d "$GRASSDATA/$WORKER_LOCATION" ]]; then
-        cp -r "$GRASSDATA/$LOCATION" "$GRASSDATA/$WORKER_LOCATION"
-        log_message "Created worker location: $WORKER_LOCATION"
+    WORKER_MAPSET="worker${i}"
+    MAPSET_PATH="$GRASSDATA/$LOCATION/$WORKER_MAPSET"
+    
+    if [[ ! -d "$MAPSET_PATH" ]]; then
+        # Create mapset directory structure
+        mkdir -p "$MAPSET_PATH"
+        
+        # Copy only essential mapset files from PERMANENT
+        cp "$GRASSDATA/$LOCATION/PERMANENT/WIND" "$MAPSET_PATH/"
+        cp "$GRASSDATA/$LOCATION/PERMANENT/DEFAULT_WIND" "$MAPSET_PATH/" 2>/dev/null || true
+        
+        # Create essential subdirectories (empty)
+        mkdir -p "$MAPSET_PATH/cell"
+        mkdir -p "$MAPSET_PATH/cellhd"
+        mkdir -p "$MAPSET_PATH/cats"
+        mkdir -p "$MAPSET_PATH/colr"
+        mkdir -p "$MAPSET_PATH/hist"
+        mkdir -p "$MAPSET_PATH/cell_misc"
+        
+        log_message "Created worker mapset: $WORKER_MAPSET (lightweight)"
     fi
 done
+
+log_message "Worker mapset creation complete"
 echo ""
 
-# Calculate slope/aspect once in main location
+# Calculate slope/aspect once in PERMANENT mapset
 log_message "Checking for slope and aspect maps..."
 if ! grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.info -e map=$SLOPE &>/dev/null; then
     log_message "Calculating slope and aspect (using all 180 CPUs)..."
@@ -213,7 +247,7 @@ if ! grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.info -e map=$SLOPE &>/dev/nul
         --overwrite
 fi
 
-# Create lon/lat rasters in main location
+# Create lon/lat rasters in PERMANENT mapset
 LONGITUDE_MAP="longitude_raster"
 LATITUDE_MAP="latitude_raster"
 
@@ -233,24 +267,6 @@ if ! grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.info -e map=$LONGITUDE_MAP &>
             --overwrite --quiet
     }
 fi
-
-# Copy slope, aspect, lon, lat to all worker locations
-log_message "Copying reference maps to worker locations..."
-for ((i=1; i<=NUM_PARALLEL_JOBS; i++)); do
-    WORKER_LOCATION="${LOCATION}_worker${i}"
-    
-    for MAP in $SLOPE $ASPECT $LONGITUDE_MAP $LATITUDE_MAP; do
-        if ! grass "$GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.info -e map=$MAP &>/dev/null; then
-            grass "$GRASSDATA/$LOCATION/$MAPSET" --exec g.copy \
-                raster=$MAP,$MAP --overwrite 2>/dev/null || true
-            
-            grass "$GRASSDATA/$WORKER_LOCATION/$MAPSET" --exec r.external \
-                input=$(grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.info -g map=$MAP | grep file | cut -d= -f2) \
-                output=$MAP --overwrite 2>/dev/null || \
-            cp -r "$GRASSDATA/$LOCATION/$MAPSET/cell/$MAP"* "$GRASSDATA/$WORKER_LOCATION/$MAPSET/cell/" 2>/dev/null || true
-        fi
-    done
-done
 echo ""
 
 # Generate timesteps
@@ -267,6 +283,13 @@ done
 log_message "Total time steps: ${#TIME_STEPS[@]}"
 log_message "Expected parallel batches: $(echo "(${#TIME_STEPS[@]} + $NUM_PARALLEL_JOBS - 1) / $NUM_PARALLEL_JOBS" | bc)"
 echo ""
+
+# Show disk/RAM usage before starting
+if [[ "$USE_RAMDISK" == "yes" ]]; then
+    log_message "RAMDisk usage before processing:"
+    df -h /mnt/ramdisk
+    echo ""
+fi
 
 # ============================================
 # Parallel Processing
@@ -321,13 +344,18 @@ log_message "  Average time per step: $(echo "scale=2; $ELAPSED / ${#TIME_STEPS[
 log_message "  Effective speedup: ${NUM_PARALLEL_JOBS}x"
 echo ""
 
-# Cleanup worker locations
-if [[ "$USE_RAMDISK" == "no" ]]; then
-    log_message "Cleaning up worker locations..."
-    for ((i=1; i<=NUM_PARALLEL_JOBS; i++)); do
-        rm -rf "$GRASSDATA/${LOCATION}_worker${i}" 2>/dev/null || true
-    done
+# Show final disk/RAM usage
+if [[ "$USE_RAMDISK" == "yes" ]]; then
+    log_message "Final RAMDisk usage:"
+    df -h /mnt/ramdisk
+    echo ""
 fi
+
+# Cleanup worker mapsets
+log_message "Cleaning up worker mapsets..."
+for ((i=1; i<=NUM_PARALLEL_JOBS; i++)); do
+    rm -rf "$GRASSDATA/$LOCATION/worker${i}" 2>/dev/null || true
+done
 
 # RAMDisk cleanup notice
 if [[ "$USE_RAMDISK" == "yes" ]]; then
@@ -335,8 +363,11 @@ if [[ "$USE_RAMDISK" == "yes" ]]; then
     log_message "RAMDisk Notice"
     log_message "========================================"
     log_message "RAMDisk is still mounted at /mnt/ramdisk"
-    log_message "To unmount: sudo umount /mnt/ramdisk"
-    log_message "Worker locations will be lost after unmount"
+    log_message "To clean up and unmount:"
+    log_message "  ./cleanup_ramdisk.sh"
+    log_message "Or manually:"
+    log_message "  sudo rm -rf /mnt/ramdisk/*"
+    log_message "  sudo umount /mnt/ramdisk"
 fi
 
 log_message "Done!"
