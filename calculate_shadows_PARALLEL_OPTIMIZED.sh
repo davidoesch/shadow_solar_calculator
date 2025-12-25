@@ -14,6 +14,10 @@
 # Example: ./calculate_shadows_PARALLEL_OPTIMIZED_v2.sh 153 yes
 # Example: ./calculate_shadows_PARALLEL_OPTIMIZED_v2.sh 153 no
 
+log_message "========================================"
+print("does currently not work!")
+log_message "========================================"
+
 set -euo pipefail
 
 # ============================================
