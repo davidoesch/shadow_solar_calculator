@@ -1,4 +1,4 @@
-# GRASS Solar Shadow Calculation Tools
+# GRASS & SAGA Solar Shadow Calculation Tools
 
 Collection of Bash scripts to create a GRASS GIS location from a DEM, precompute slope/aspect, and calculate solar incidence / shadow masks for given day(s) and time ranges using r.sun.
 
@@ -152,7 +152,80 @@ Recommendations / next improvements
 - Add unit tests / dry-run mode to validate configuration without launching heavy computation.
 - Optionally add an aggregate step to combine shadow masks across time or produce daily shadow frequency rasters.
 - Consider using a GRASS session wrapper (e.g., start an interactive GRASS session and run commands) to reduce repeated mapset startup cost for many time steps.
-  
+
+
+# SAGA Shadow & Solar Incidence Calculator
+
+This Python script (`SAGA_shadow_incidence.py`) automates the processing of Digital Elevation Models (DEM) using **SAGA GIS (ta_lighting)**. It allows for batch calculation of solar parameters for specific dates and times.
+
+## Features
+The script runs two distinct analyses for every input:
+1.  **Cast Shadow Mask** (Method 3): A binary mask where `1` = Shadow and `0`/NoData = Sun.
+2.  **Solar Incidence Angle** (Method 0): The angle of incoming light relative to the terrain surface in **Degrees**.
+
+## Prerequisites
+*   **Python 3.x**
+*   **SAGA GIS** (Version 9.11.0 or compatible)
+
+## Configuration
+Before running, you must ensure the path to `saga_cmd.exe` inside `SAGA_shadow_incidence.py` matches your local installation:
+
+```python
+# Edit this line in the script:
+SAGA_CMD = r"C:\legacySW\shadow_solar_calculator\saga\saga-9.11.0_msw\saga_cmd.exe"
+```
+
+## Usage
+Run the script from the command line with the following arguments:
+```python
+python SAGA_shadow_incidence.py <TIMESTAMP> <DEM_PATH> <OUTPUT_DIR>
+```
+| Argument   | Description                     | Format        | Example                      |
+| ---------- | ------------------------------- | ------------- | ---------------------------- |
+| TIMESTAMP  | Date/Time for solar position    | YYYYMMDDtHHMM | 20210602t1005                |
+| DEM_PATH   | Path to input Elevation GeoTIFF | File path     | LIDAR_MAX_subset_engadin.tif |
+| OUTPUT_DIR | Folder to save results          | Folder path   | .\\results                   |
+
+## Example command
+Run the script from the command line with the following arguments:
+```python
+python SAGA_shadow_incidence.py 20210602t1005 "C:\data\LIDAR_MAX_subset_engadin.tif" "C:\data\output"
+```
+
+## Output Files
+The script generates two GeoTIFF files in your output directory:
+
+```python
+shadow_[timestamp]_[dem_name].tif
+```
+with 
+- SAGA Method: 3 (Shadows Only)
+- Description: Ray-traced cast shadows. This accounts for mountains blocking the sun from across the valley.
+- Note: Calculated with unrestricted radius (uses full DEM extent) for maximum accuracy.
+
+```python
+angle_[timestamp]_[dem_name].tif
+```
+- SAGA Method: 0 (Standard)
+- Unit: Degrees (-UNIT 1)
+- Description: The local incidence angle.
+- 90 = Sun perpendicular to slope (Brightest)
+- 0 = Sun grazing surface
+- <0 = Self-shadow (Slope facing away)
+
+Comparison table between SAGA's analytical hillshading and GRASS's solar radiation module
+------------------------------------------------------------------------------------------
+
+| Feature | SAGA `ta_lighting` 0 (Method 3) | GRASS `r.sun` |
+| :-- | :-- | :-- |
+| **Primary Goal** | Geometric visualization (Ray tracing). | Physical solar radiation modeling. |
+| **Precision** | **Lower.** Typically assumes a flat earth plane (unless specific projection corrections are applied) and calculates simple line-of-sight. | **Higher.** Accounts for **Earth curvature** and **atmospheric refraction**, which significantly affect shadow length at low sun angles (morning/evening) in the Alps [^1]. |
+| **Shadowing** | Binary (Shadow/No Shadow). Fast C++ implementation. | Detailed. Can calculate binary shadows or actual irradiance reduction. |
+| **Input Data** | Just DEM. Calculates slope and aspect on the fly. | Requires pre-calculated Slope and Aspect maps (usually). |
+| **Speed** | Very Fast. | Slower (computationally intensive). |
+
+
+
 
 License
 -------

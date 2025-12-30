@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Secrets (WICHTIG!)
+secrets/
+
+# Temporary files
+temp/
+saga/
+
+# GDAL auxiliary files
+*.aux.xml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data files (optional - je nach Workflow)
+*.tif
+*.jpg
+*.jpeg
+*.kml
