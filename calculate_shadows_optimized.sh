@@ -5,8 +5,9 @@
 # 
 # IMPORTANT: This script uses civil_time=0 to ensure UTC time interpretation
 # 
-# Usage: ./calculate_shadows_optimized_UTC.sh [day_of_year]
+# Usage: ./calculate_shadows_optimized_UTC.sh [day_of_year] [start_HHMM] [end_HHMM]
 # Example: ./calculate_shadows_optimized_UTC.sh 153
+# Example: ./calculate_shadows_optimized_UTC.sh 153 1032 1036
 
 set -euo pipefail
 
@@ -17,6 +18,29 @@ set -euo pipefail
 # Get day of year from command line argument, default to day 153
 DOY=${1:-153}
 YEAR=2021
+
+# Parse optional start and end times (HHMM format)
+if [ $# -ge 2 ]; then
+    # Convert HHMM to decimal hours
+    START_HHMM=$2
+    START_HH=${START_HHMM:0:2}
+    START_MM=${START_HHMM:2:2}
+    UTC_START_HOUR=$(echo "scale=6; $START_HH + $START_MM / 60" | bc)
+else
+    # Use default from script
+    UTC_START_HOUR=10
+fi
+
+if [ $# -ge 3 ]; then
+    # Convert HHMM to decimal hours
+    END_HHMM=$3
+    END_HH=${END_HHMM:0:2}
+    END_MM=${END_HHMM:2:2}
+    UTC_END_HOUR=$(echo "scale=6; $END_HH + $END_MM / 60" | bc)
+else
+    # Use default from script
+    UTC_END_HOUR=11
+fi
 
 # GRASS GIS paths
 GRASSDATA="${GRASSDATA:-$HOME/grassdata}"
@@ -39,10 +63,7 @@ NPROCS=180
 export GDAL_CACHEMAX=16384
 export GDAL_NUM_THREADS=8
 
-# UTC TIME SETTINGS - Sentinel-2 overpass times
-# These are REAL UTC times, not local times
-UTC_START_HOUR=10
-UTC_END_HOUR=11
+# Processing interval
 INTERVAL_MINUTES=2.0
 
 # CRITICAL: Set civil_time=0 to interpret times as UTC
@@ -69,7 +90,7 @@ log_message "Shadow Calculation - UTC Mode (CORRECTED)"
 log_message "========================================"
 log_message "Day of Year: $DOY"
 log_message "Year: $YEAR"
-log_message "UTC time range: ${UTC_START_HOUR}:00 - ${UTC_END_HOUR}:00"
+log_message "UTC time range: $(printf "%.4f" $UTC_START_HOUR) - $(printf "%.4f" $UTC_END_HOUR) (decimal hours)"
 log_message "Interval: ${INTERVAL_MINUTES} minutes"
 log_message "civil_time: $CIVIL_TIME (UTC mode)"
 log_message "Output directory: $OUTPUT_DIR"
@@ -274,7 +295,7 @@ log_message "========================================"
 log_message "UTC Time Configuration (CORRECTED)"
 log_message "========================================"
 log_message "civil_time: $CIVIL_TIME (UTC mode - no timezone offset)"
-log_message "UTC time processed: ${UTC_START_HOUR}:00 - ${UTC_END_HOUR}:00"
+log_message "UTC time processed: $(printf "%.4f" $UTC_START_HOUR) - $(printf "%.4f" $UTC_END_HOUR) (decimal hours)"
 log_message "Output filenames: *_UTC${HOUR_PART}${MINUTE_PART}.tif"
 log_message ""
 log_message "This configuration ensures shadows are calculated for"
