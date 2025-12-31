@@ -1,10 +1,12 @@
 #!/bin/bash
-# Script: calculate_shadows_optimizedC.sh
+# Script: calculate_shadows_optimizedC_FIXED.sh
 # Optimized for high-core count systems (180 CPUs, 1TB RAM)
 # CORRECTLY CONFIGURED FOR: UTC time (Sentinel-2: 10:00-11:00 UTC)
 # 
 # IMPORTANT: This script uses civil_time=0 to ensure UTC time interpretation
 # 
+# FIXED: Correct 8-bit conversion for incidence angle (0-90° -> 0-254, 255=nodata)
+#
 # Usage: ./calculate_shadows_optimized_UTC.sh [day_of_year] [start_HHMM] [end_HHMM]
 # Example: ./calculate_shadows_optimized_UTC.sh 153
 # Example: ./calculate_shadows_optimized_UTC.sh 153 1032 1036
@@ -227,14 +229,17 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
         nprocs=$NPROCS \
         --overwrite --quiet
     
-    # Create shadow mask (1=shadow, 0=illuminated)
+    # Create shadow mask (0=shadow, 1=illuminated)
+    # Note: r.sun sets beam_rad to NULL for shadowed areas
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
-        "$SHADOW_MAP = if(isnull($INCIDENCE_MAP), 1, 0)" \
+        "$SHADOW_MAP = if(isnull($BEAM_MAP), 0, 1)" \
         --overwrite --quiet
     
-    # Convert solar incidence angle to 8-bit (0-90 degrees -> 0-254)
+    # FIXED: Convert solar incidence angle to 8-bit (0-90 degrees -> 0-254, 255=nodata)
+    # Old (WRONG): * 255.0 / 90.0 makes 90° = 255 (conflicts with nodata)
+    # New (CORRECT): * 254.0 / 90.0 makes 90° = 254 (255 reserved for nodata)
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
-        "$INCIDENCE_8BIT = if(isnull($INCIDENCE_MAP), 255, int(min(round($INCIDENCE_MAP * 255.0 / 90.0), 254)))" \
+        "$INCIDENCE_8BIT = if(isnull($INCIDENCE_MAP), 255, int(round($INCIDENCE_MAP * 254.0 / 90.0)))" \
         --overwrite --quiet
     
     # Export shadow mask
@@ -302,7 +307,20 @@ log_message "This configuration ensures shadows are calculated for"
 log_message "the EXACT UTC time matching Sentinel-2 timestamps"
 log_message "========================================"
 echo ""
-log_message "Note: Solar incidence angles are scaled to 8-bit:"
+log_message "========================================"
+log_message "8-bit Incidence Angle Encoding (FIXED)"
+log_message "========================================"
+log_message "Solar incidence angles are scaled to 8-bit:"
 log_message "  Value 0-254: Incidence angle 0-90° (scaled)"
-log_message "  Value 255: No data (shadowed areas)"
-log_message "  To convert back: angle_degrees = (value * 90.0) / 255.0"
+log_message "  Value 0:     0° (perpendicular, maximum light)"
+log_message "  Value 127:   ~45° (moderate angle)"
+log_message "  Value 254:   90° (parallel, no direct light)"
+log_message "  Value 255:   No data (NULL in original)"
+log_message ""
+log_message "To convert back to degrees:"
+log_message "  angle_degrees = (value * 90.0) / 254.0"
+log_message ""
+log_message "Shadow mask values:"
+log_message "  0 = shadow (no direct beam)"
+log_message "  1 = illuminated (direct beam reaches surface)"
+log_message "========================================"
