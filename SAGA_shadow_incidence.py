@@ -51,13 +51,13 @@ def run_saga_analysis(timestamp_str, dem_input, out_dir):
     ]
     subprocess.run(cmd_shadow)
 
-    # 2. EINFALLSWINKEL (METHOD 0: Standard)
+    # 2. EINFALLSWINKEL (METHOD 1: Standard)
     print("Calculating Solar Incidence Angle...")
     cmd_angle = [
         SAGA_CMD, "ta_lighting", "0",
         "-ELEVATION", dem_input,
         "-SHADE", out_angle,
-        "-METHOD", "0",
+        "-METHOD", "1", #1 = Standard (max. 90 Degree)
         "-POSITION", "1",
         "-DATE", saga_date,
         "-TIME", str(saga_time),
