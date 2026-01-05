@@ -238,8 +238,15 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     # FIXED: Convert solar incidence angle to 8-bit (0-90 degrees -> 0-254, 255=nodata)
     # Old (WRONG): * 255.0 / 90.0 makes 90° = 255 (conflicts with nodata)
     # New (CORRECT): * 254.0 / 90.0 makes 90° = 254 (255 reserved for nodata)
+    # NEW (CORRECT):
+    # First, invert the angle to match Python convention
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
-        "$INCIDENCE_8BIT = if(isnull($INCIDENCE_MAP), 255, int(round($INCIDENCE_MAP * 254.0 / 90.0)))" \
+        "$INCIDENCE_FLIPPED = 90 - $INCIDENCE_MAP" \
+        --overwrite --quiet
+
+    # Then convert to 8-bit
+    grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
+        "$INCIDENCE_8BIT = if(isnull($INCIDENCE_FLIPPED), 255, int(round($INCIDENCE_FLIPPED * 254.0 / 90.0)))" \
         --overwrite --quiet
     
     # Export shadow mask
