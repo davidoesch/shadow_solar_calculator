@@ -6,6 +6,7 @@
 # IMPORTANT: This script uses civil_time=0 to ensure UTC time interpretation
 # 
 # FIXED: Correct 8-bit conversion for incidence angle (0-90° -> 0-254, 255=nodata)
+# FIXED: Unbound variable error for INCIDENCE_FLIPPED
 #
 # Usage: ./calculate_shadows_optimized_UTC.sh [day_of_year] [start_HHMM] [end_HHMM]
 # Example: ./calculate_shadows_optimized_UTC.sh 153
@@ -209,6 +210,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     
     # Output raster names
     INCIDENCE_MAP="solar_incidence_doy${DOY}_UTC${TIME_STRING}"
+    INCIDENCE_FLIPPED="solar_incidence_flipped_doy${DOY}_UTC${TIME_STRING}"
     INCIDENCE_8BIT="solar_incidence_8bit_doy${DOY}_UTC${TIME_STRING}"
     BEAM_MAP="beam_rad_doy${DOY}_UTC${TIME_STRING}"
     SHADOW_MAP="shadow_mask_doy${DOY}_UTC${TIME_STRING}"
@@ -241,12 +243,12 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     # NEW (CORRECT):
     # First, invert the angle to match Python convention
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
-        "$INCIDENCE_FLIPPED = 90 - $INCIDENCE_MAP" \
+        "${INCIDENCE_FLIPPED} = 90 - ${INCIDENCE_MAP}" \
         --overwrite --quiet
 
     # Then convert to 8-bit
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
-        "$INCIDENCE_8BIT = if(isnull($INCIDENCE_FLIPPED), 255, int(round($INCIDENCE_FLIPPED * 254.0 / 90.0)))" \
+        "${INCIDENCE_8BIT} = if(isnull(${INCIDENCE_FLIPPED}), 255, int(round(${INCIDENCE_FLIPPED} * 254.0 / 90.0)))" \
         --overwrite --quiet
     
     # Export shadow mask
@@ -271,7 +273,7 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
     # Clean up intermediate rasters
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec g.remove -f \
         type=raster \
-        name=$BEAM_MAP,$INCIDENCE_MAP,$INCIDENCE_8BIT,$SHADOW_MAP \
+        name=$BEAM_MAP,$INCIDENCE_MAP,$INCIDENCE_FLIPPED,$INCIDENCE_8BIT,$SHADOW_MAP \
         2>/dev/null || true
     
     log_message "✓ Completed UTC ${HOUR_PART}:${MINUTE_PART}"
