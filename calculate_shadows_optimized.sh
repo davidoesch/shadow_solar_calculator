@@ -231,10 +231,9 @@ for CURRENT_TIME in "${TIME_STEPS[@]}"; do
         nprocs=$NPROCS \
         --overwrite --quiet
     
-    # Create shadow mask (0=shadow, 1=illuminated)
-    # Note: r.sun sets beam_rad to NULL for shadowed areas
+    # Create shadow mask (1=shadow, 0=illuminated) - ORIGINAL METHOD
     grass "$GRASSDATA/$LOCATION/$MAPSET" --exec r.mapcalc \
-        "$SHADOW_MAP = if(isnull($BEAM_MAP), 0, 1)" \
+        "$SHADOW_MAP = if(isnull($INCIDENCE_MAP), 1, 0)" \
         --overwrite --quiet
     
     # FIXED: Convert solar incidence angle to 8-bit (0-90 degrees -> 0-254, 255=nodata)
