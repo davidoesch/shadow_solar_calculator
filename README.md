@@ -1,238 +1,195 @@
-# GRASS & SAGA Solar Shadow Calculation Tools
+<img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-Collection of Bash scripts to create a GRASS GIS location from a DEM, precompute slope/aspect, and calculate solar incidence / shadow masks for given day(s) and time ranges using r.sun.
+# Kannst du mri das readme.me anpassen? ich habe files gelöscht und funtkionen geändert. Gebe mir ein markdonw zurück. ohne emojis
 
-This repository contains three scripts:
-- `setup_grass_location.sh` — create a GRASS location from a georeferenced DEM and import the DEM (creates `INPUT_DSM`, sets region, precomputes slope/aspect).
-- `calculate_shadows_optimized.sh` — an optimized, safer, and more featureful version tuned for machines with many cores and large memory (180 CPUs / 4 TB RAM in the script example, takes approx 8min for one run for swissALTIRegio). Uses GDAL and TIFF optimizations and removes intermediate rasters to save space.
-- `calculate_shadows_PARALLEL_OPTIMIZED.sh ` as above but highly parallelized and with the use of RAMDISK
-- `calculate_shadows_sunmask.sh` — only shadowmask, uses r.sunmask (SOLPOS algorithm) for UTC shadow calculation,r.sunmask uses SOLPOS algorithm with explicit timezone parameter tuned for machines with many cores and large memory (180 CPUs / 4 TB RAM in the script example
-- `calculate_shadows_sunmask_PARALLEL_OPTIMIZED.sh`as above but highly parallelized and with the use of RAMDISK
+Das folgende Markdown ist eine aktualisierte Version deiner `README.md`. Es wurden die gelöschten Skripte entfernt, die neuen Python- und SAGA-Skripte hinzugefügt und die Beschreibungen der Funktionen (insbesondere die 8-Bit-Skalierung und UTC-Korrekturen) aktualisiert. Emojis wurden entfernt.
+
+***
+
+# GRASS, SAGA \& Python Solar Shadow Calculation Tools
+
+Collection of Bash and Python tools to create shadow masks and calculate solar incidence angles from a DEM. This repository offers multiple approaches: optimized GRASS GIS workflows (r.sun/r.sunmask), a pure Python implementation, and a SAGA GIS wrapper.
+
+This repository contains the following main tools:
+
+- `setup_grass_location.sh` — Creates a GRASS location from a georeferenced DEM.
+- `calculate_shadows_optimized.sh` — High-performance GRASS script using `r.sun` with UTC timing and 8-bit compressed output.
+- `calculate_shadows_sunmask.sh` — GRASS script using `r.sunmask` (SOLPOS algorithm) for binary shadow masks.
+- `AGRO_shadow_incidence.py` — Pure Python implementation for shadow and incidence angle calculation.
+- `SAGA_shadow_incidence.py` — Wrapper script to run SAGA GIS shadow analysis.
 
 
-About
------
-These scripts automate a common workflow for producing per-time-step solar incidence and binary shadow masks using GRASS GIS `r.sun`. Typical use-cases include solar resource assessment, microclimate/shade analysis, and input layers for EO products.
+## Requirements
 
-Requirements
-------------
-- GRASS GIS (7.x or 8.x) installed and on PATH (commands: `grass`)
-- GDAL (`gdal`/`r.out.gdal` used by GRASS)
+### General
+
 - Bash (POSIX)
-- coreutils: `mkdir`, `ls`, `du`, `rm`
-- `bc`, `awk`,`parallel`
-- Sufficient disk space to store generated GeoTIFFs (see Performance tips)
+- coreutils (mkdir, ls, du, rm), bc, awk
 
 
-Files & purpose
-----------------
-- setup_grass_location.sh
-  - Creates `$GRASSDATA` (default: `$HOME/grassdata`) and a `swiss_project` location
-  - Imports a georeferenced DEM as `INPUT_DSM`
-  - Sets computational region to the DEM extent
-  - Precalculates `slope_deg` and `aspect_deg`
+### For GRASS Scripts
 
-- calculate_shadows_optimized.sh
-  - Robust version with:
-    - `set -euo pipefail`
-    - Logging function
-    - GDAL and TIFF compression optimizations (ZSTD)
-    - Explicit core (NPROCS) and GDAL tuning (GDAL_CACHEMAX, GDAL_NUM_THREADS)
-    - Cleanup of intermediate rasters to reduce storage usage
-    - Summary statistics (file counts, total size, average time per step)
-   
-- calculate_shadows_PARALLEL_OPTIMIZED.sh
-  - as above but with RAMDISK and parallelized
-  - ./calculate_shadows_PARALLEL_OPTIMIZED.sh [day_of_year] [use_ramdisk]
-   
-- calculate_shadows_sunmask.sh
-    - Robust version with:
-      - Only shadowmask
-      - `set -euo pipefail`
-      - Logging function
-      - GDAL and TIFF compression optimizations (ZSTD)
-      - Explicit core (NPROCS) and GDAL tuning (GDAL_CACHEMAX, GDAL_NUM_THREADS)
-      - Cleanup of intermediate rasters to reduce storage usage
-      - Summary statistics (file counts, total size, average time per step)   
-
-- calculate_shadows_sunmask_PARALLEL_OPTIMIZED.sh
-  - as above but with RAMDISK and parallelized
-  - ./calculate_shadows_sunmask_PARALLEL_OPTIMIZED.sh [day_of_year] [use_ramdisk]
-
-Quick start
------------
-1. Make scripts executable:
-   chmod +x setup_grass_location.sh calculate_shadows_optimized.sh calculate_shadows_sunmask.sh calculate_shadows_PARALLEL_OPTIMIZED.sh calculate_shadows_sunmask_PARALLEL_OPTIMIZED.sh
-
-2. Create a GRASS location and import DEM:
-   ./setup_grass_location.sh /path/to/Thinout_highest_object_10m_LV95_LHN95_ref.tif
-
-   - By default, the scripts use GRASS database at $HOME/grassdata and location `swiss_project`.
-   - You can override GRASSDATA before running:
-     export GRASSDATA=/data/grassdb
-
-3. Run the optimized shadow calculation (recommended):
-   ./calculate_shadows_optimized.sh 153
-
-   - This will process day-of-year 153 (change the DOY argument as needed).
-   - Outputs are written to `./shadow_outputs_doy153/`.
-
-Usage examples
---------------
-- Run optimized version for DOY 200:
-  ./calculate_shadows_optimized.sh 200
-
-- Run PARALLEL with RAMDISK optimized version for DOY 200:
-  ./calculate_shadows_PARALLEL_OPTIMIZED.sh 153 yes
-
-- Use a custom GRASS database location:
-  export GRASSDATA=/mnt/grassdata
-  ./setup_grass_location.sh /path/to/dem.tif
-  ./calculate_shadows_optimized.sh 153
-
-- Run on a smaller system: edit `NPROCS`, `GDAL_CACHEMAX`, and `COMPRESS` variables at the top of `calculate_shadows_optimized.sh` to suit available resources.
-
-Configuration / important variables
-----------------------------------
-- DOY — day of year (argument to scripts, defaults in scripts if not provided)
-- YEAR — calendar year (not currently used in r.sun invocation but kept for metadata)
-- GRASSDATA — GRASS database path, default `$HOME/grassdata` (can be exported in environment)
-- LOCATION — GRASS location name (default: `swiss_project`)
-- MAPSET — GRASS mapset (default: `PERMANENT`)
-- DEM — raster name used inside GRASS (`INPUT_DSM` by default)
-- SLOPE / ASPECT — derived rasters names (`slope_deg`, `aspect_deg`)
-- NPROCS — cores passed to r.sun / r.slope.aspect (set according to your CPU count)
-- GDAL_CACHEMAX, GDAL_NUM_THREADS — GDAL tuning (in optimized script)
-- COMPRESS — GDAL/TIFF creation options (optimized script suggests ZSTD)
-
-Output format & naming convention
---------------------------------
-- Output directory: ./shadow_outputs_doy<DOY>/
-- Shadow mask files:
-  - shadow_mask_doy<DOY>_<HHMM>.tif
-  - Binary map: 1=shadow, 0=illuminated
-- Solar incidence files:
-  - solar_incidence_doy<DOY>_<HHMM>.tif
-  - Units: degrees (as produced by r.sun / incidout)
-- Intermediate GRASS raster names follow the pattern:
-  - beam_rad_doy<DOY>_<HHMM>
-  - solar_incidence_doy<DOY>_<HHMM>
-  - shadow_mask_doy<DOY>_<HHMM>
-
-Notes on time formatting:
-- Time string is created from a floating-hour value; e.g., 10.00 -> 1000, 10.25 -> 1025.
-- The scripts calculate INTERVAL_HOURS = INTERVAL_MINUTES / 60 and loop from START_HOUR to END_HOUR (exclusive).
-
-Performance tips
-----------------
-- Use `calculate_shadows_optimized.sh` on multi-core systems. Tune:
-  - NPROCS to the number of available CPU cores (but leave some for system tasks)
-  - GDAL_CACHEMAX (in MB) to give more memory for GDAL caching (e.g., 4096, 8192)
-  - COMPRESS: ZSTD with low zlevel (e.g., ZLEVEL=1) gives fast compression and small files
-- Exporting and writing many GeoTIFFs can be I/O-bound; use local fast SSD when possible.
-- Clean intermediate rasters (`g.remove`) to avoid filling GRASS DB with many temporary raster maps.
-- If processing many DOYs, consider parallelizing across DOYs (but be careful accessing the same GRASS mapset concurrently).
-
-Troubleshooting
----------------
-- GRASS command not found:
-  - Ensure GRASS is installed and `grass` is on PATH. You may need to load a module or source GRASS environment.
-- Permission errors writing output:
-  - Check that the current user has write permissions to the working directory and $GRASSDATA.
-- r.sun fails or returns zeros/nulls:
-  - Confirm `INPUT_DSM`, `slope_deg`, `aspect_deg` exist inside the GRASS mapset.
-  - Run a single r.sun call interactively inside the GRASS session to debug parameters.
-- Time precision/loop rounding:
-  - If you see odd minute strings (due to floating point), reduce floating point usage or adjust INTERVAL_MINUTES to integer-minute intervals.
-
-Recommendations / next improvements
-----------------------------------
-- Adapt it to LV95
-- Add a CLI parameter parser (getopts) to configure START_HOUR, END_HOUR, INTERVAL, NPROCS, OUTPUT_DIR without editing scripts.
-- Add unit tests / dry-run mode to validate configuration without launching heavy computation.
-- Optionally add an aggregate step to combine shadow masks across time or produce daily shadow frequency rasters.
-- Consider using a GRASS session wrapper (e.g., start an interactive GRASS session and run commands) to reduce repeated mapset startup cost for many time steps.
+- GRASS GIS (7.x or 8.x)
+- GDAL (used by GRASS for import/export)
 
 
-# SAGA Shadow & Solar Incidence Calculator
+### For Python Scripts
 
-This Python script (`SAGA_shadow_incidence.py`) automates the processing of Digital Elevation Models (DEM) using **SAGA GIS (ta_lighting)**. It allows for batch calculation of solar parameters for specific dates and times.
+- Python 3.8+
+- See `AGRO_requirements.txt` for specific packages:
+    - numpy
+    - rasterio
+    - pvlib
+    - pandas
 
-## Features
-The script runs two distinct analyses for every input:
-1.  **Cast Shadow Mask** (Method 3): A binary mask where `1` = Shadow and `0`/NoData = Sun.
-2.  **Solar Incidence Angle** (Method 0): The angle of incoming light relative to the terrain surface in **Degrees**.
 
-## Prerequisites
-*   **Python 3.x**
-*   **SAGA GIS** (Version 9.11.0 or compatible)
+### For SAGA Script
+
+- SAGA GIS (tested with 9.11.0)
+- `saga_cmd` executable accessible or path configured in script
+
+
+## Files \& Purpose
+
+### setup_grass_location.sh
+
+- Creates `$GRASSDATA` (default: `$HOME/grassdata`) and a `swiss_project` location.
+- Imports a georeferenced DEM as `INPUT_DSM`.
+- Sets computational region to the DEM extent.
+- Precalculates `slope_deg` and `aspect_deg` to save time during processing.
+
+
+### calculate_shadows_optimized.sh
+
+- **Algorithm**: Uses `r.sun` with `civil_time=0` for strict UTC interpretation.
+- **Outputs**:
+    - Shadow Mask: 1 = Illuminated, 0 = Shadow.
+    - Solar Incidence: 8-bit encoded (0-254).
+- **Features**:
+    - Optimized for multi-core systems (NPROCS tuning).
+    - RAMDISK and GDAL caching support.
+    - Compresses outputs using ZSTD to save disk space.
+    - **Incidence Encoding**: The output is scaled to 8-bit to reduce file size.
+        - Value 0: 0 degrees (perpendicular, max light)
+        - Value 254: 90 degrees (parallel, no light)
+        - Value 255: No Data
+        - Conversion formula: `angle_deg = (value * 90.0) / 254.0`
+
+
+### calculate_shadows_sunmask.sh
+
+- **Algorithm**: Uses `r.sunmask` with SOLPOS algorithm.
+- **Outputs**:
+    - Shadow Mask: 1 = Shadow, 0 = Illuminated.
+- **Features**:
+    - Uses explicit timezone=0 for UTC.
+    - Faster than `r.sun` if only binary shadows are needed.
+
+
+### AGRO_shadow_incidence.py
+
+- **Algorithm**: Custom Python implementation using numpy/rasterio.
+- **Outputs**:
+    - Shadow mask (8-bit): 1 = No shadow (Illuminated), 0 = Shadow.
+    - Incidence angle (8-bit): 0-90 degrees (0 = perpendicular). Shadowed areas are set to 90 degrees.
+- **Features**:
+    - Single-file solution without GRASS dependency.
+    - Interprets timestamps as UTC.
+
+
+### SAGA_shadow_incidence.py
+
+- **Algorithm**: Wrapper for SAGA GIS `ta_lighting` module.
+- **Outputs**:
+    - Shadow mask (Method 3).
+    - Incidence angle (Method 1).
+- **Usage**: Expects path to `saga_cmd` to be configured or available.
+
+
+## Quick Start
+
+### 1. Setup GRASS Environment (Bash Scripts)
+
+Make scripts executable and initialize the location:
+
+```bash
+chmod +x *.sh
+./setup_grass_location.sh /path/to/dem_LV95.tif
+```
+
+
+### 2. Run Shadow Calculations
+
+**Option A: Optimized GRASS r.sun (Recommended)**
+Calculate shadows and incidence for Day of Year 153 between 10:00 and 11:00 UTC:
+
+```bash
+# Usage: ./calculate_shadows_optimized.sh [DOY] [START_HHMM] [END_HHMM]
+./calculate_shadows_optimized.sh 153 1000 1100
+```
+
+Outputs are saved to `./shadow_outputs_doy153/`.
+
+**Option B: Python Implementation**
+Run the AGRO python script (ensure requirements are installed):
+
+```bash
+pip install -r AGRO_requirements.txt
+python AGRO_shadow_incidence.py
+```
+
+*Note: Check the CONFIG section at the top of the script for input paths and timestamps.*
+
+**Option C: SAGA GIS**
+Run the SAGA wrapper:
+
+```bash
+# Usage: python SAGA_shadow_incidence.py [YYYYMMDDtHHMM] [DEM_PATH] [OUTPUT_DIR]
+python SAGA_shadow_incidence.py 20210602t1005 ./data/dem.tif ./output_results
+```
+
 
 ## Configuration
-Before running, you must ensure the path to `saga_cmd.exe` inside `SAGA_shadow_incidence.py` matches your local installation:
 
-```python
-# Edit this line in the script:
-SAGA_CMD = r"C:\legacySW\shadow_solar_calculator\saga\saga-9.11.0_msw\saga_cmd.exe"
-```
+### GRASS Scripts Variables
 
-## Usage
-Run the script from the command line with the following arguments:
-```python
-python SAGA_shadow_incidence.py <TIMESTAMP> <DEM_PATH> <OUTPUT_DIR>
-```
-| Argument   | Description                     | Format        | Example                      |
-| ---------- | ------------------------------- | ------------- | ---------------------------- |
-| TIMESTAMP  | Date/Time for solar position    | YYYYMMDDtHHMM | 20210602t1005                |
-| DEM_PATH   | Path to input Elevation GeoTIFF | File path     | LIDAR_MAX_subset_engadin.tif |
-| OUTPUT_DIR | Folder to save results          | Folder path   | .\\results                   |
+Adjust these variables at the top of the Bash scripts to match your hardware:
 
-## Example command
-Run the script from the command line with the following arguments:
-```python
-python SAGA_shadow_incidence.py 20210602t1005 "C:\data\LIDAR_MAX_subset_engadin.tif" "C:\data\output"
-```
-
-## Output Files
-The script generates two GeoTIFF files in your output directory:
-
-```python
-shadow_[timestamp]_[dem_name].tif
-```
-with 
-- SAGA Method: 3 (Shadows Only)
-- Description: Ray-traced cast shadows. This accounts for mountains blocking the sun from across the valley.
-- Note: Calculated with unrestricted radius (uses full DEM extent) for maximum accuracy.
-
-```python
-angle_[timestamp]_[dem_name].tif
-```
-- SAGA Method: 0 (Standard)
-- Unit: Degrees (-UNIT 1)
-- Description: The local incidence angle.
-- 90 = Sun perpendicular to slope (Brightest)
-- 0 = Sun grazing surface
-- <0 = Self-shadow (Slope facing away)
-
-Comparison table between SAGA's analytical hillshading and GRASS's solar radiation module
-------------------------------------------------------------------------------------------
-
-| Feature | SAGA `ta_lighting` 0 (Method 3) | GRASS `r.sun` |
-| :-- | :-- | :-- |
-| **Primary Goal** | Geometric visualization (Ray tracing). | Physical solar radiation modeling. |
-| **Precision** | **Lower.** Typically assumes a flat earth plane (unless specific projection corrections are applied) and calculates simple line-of-sight. | **Higher.** Accounts for **Earth curvature** and **atmospheric refraction**, which significantly affect shadow length at low sun angles (morning/evening) in the Alps [^1]. |
-| **Shadowing** | Binary (Shadow/No Shadow). Fast C++ implementation. | Detailed. Can calculate binary shadows or actual irradiance reduction. |
-| **Input Data** | Just DEM. Calculates slope and aspect on the fly. | Requires pre-calculated Slope and Aspect maps (usually). |
-| **Speed** | Very Fast. | Slower (computationally intensive). |
+- `NPROCS`: Number of CPU cores (e.g., 180).
+- `GDAL_CACHEMAX`: Memory for GDAL in MB (e.g., 16384).
+- `GRASSDATA`: Path to GRASS database.
+- `COMPRESS`: GeoTIFF compression settings (default: ZSTD).
 
 
+### Python Config
+
+For `AGRO_shadow_incidence.py`, edit the `CONFIG` dictionary at the top of the file:
+
+- `DEFAULT_TS`: Timestamp string (YYYYMMDDtHHMM).
+- `DEFAULT_DEM`: Path to input DEM.
+- `REF_LAT` / `REF_LON`: Reference location for solar calculation.
 
 
-License
--------
-MIT
+## Output Formats and Interpretation
 
-Acknowledgements
-----------------
-- GRASS GIS project — for `r.sun`, `r.slope.aspect`, `r.mapcalc`, `r.out.gdal`
-- GDAL — for GeoTIFF export and optimizations
+| Tool | Shadow Value 0 | Shadow Value 1 | Incidence Angle Format |
+| :-- | :-- | :-- | :-- |
+| **calculate_shadows_optimized.sh** | Shadow | **Illuminated** | 8-bit scaled (0=0deg, 254=90deg) |
+| **calculate_shadows_sunmask.sh** | **Illuminated** | Shadow | N/A |
+| **AGRO_shadow_incidence.py** | Shadow | **Illuminated** | 8-bit (0-90 raw values) |
+| **SAGA_shadow_incidence.py** | varies (check SAGA ver) | varies | Float/Grid |
+
+**Important Note on Incidence Angles:**
+
+- The optimized GRASS script inverts and scales the angle to fit into 8-bit storage efficiently.
+- 0 corresponds to maximum illumination (sun perpendicular to surface).
+- 254 corresponds to no illumination (sun parallel to surface or behind).
+
+
+## Troubleshooting
+
+- **GRASS command not found**: Ensure GRASS is installed and added to your PATH.
+- **Permission errors**: Check write permissions for output directories and `$GRASSDATA`.
+- **SAGA path error**: Update `SAGA_CMD` in `SAGA_shadow_incidence.py` to point to your local `saga_cmd` executable.
+- **Python import errors**: Install dependencies using `pip install -r AGRO_requirements.txt`.
 
