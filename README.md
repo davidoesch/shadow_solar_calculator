@@ -1,11 +1,5 @@
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-# Kannst du mri das readme.me anpassen? ich habe files gelöscht und funtkionen geändert. Gebe mir ein markdonw zurück. ohne emojis
-
-Das folgende Markdown ist eine aktualisierte Version deiner `README.md`. Es wurden die gelöschten Skripte entfernt, die neuen Python- und SAGA-Skripte hinzugefügt und die Beschreibungen der Funktionen (insbesondere die 8-Bit-Skalierung und UTC-Korrekturen) aktualisiert. Emojis wurden entfernt.
-
-***
-
 # GRASS, SAGA \& Python Solar Shadow Calculation Tools
 
 Collection of Bash and Python tools to create shadow masks and calculate solar incidence angles from a DEM. This repository offers multiple approaches: optimized GRASS GIS workflows (r.sun/r.sunmask), a pure Python implementation, and a SAGA GIS wrapper.
