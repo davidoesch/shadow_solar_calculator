@@ -77,7 +77,7 @@ CONFIG = {
 
     # Tile size in output pixels.
     # 4096x4096 Float64 ~ 128 MB per tile before halo; tune to your RAM/worker budget.
-    "TILE_SIZE": 1024,
+    "TILE_SIZE": 4096,
 
     # None -> os.cpu_count()
     "N_WORKERS": None,
@@ -508,42 +508,68 @@ def main():
     else:
         print("Numba JIT: NOT available (install numba for ~100x speedup)")
 
-    # ---- Create output rasters (pre-filled with nodata) ---------------------
+    # ---- Create output rasters -----------------------------------------------
+    # IMPORTANT: workers write tiles concurrently.
+    # Compressed (DEFLATE/LZW) tiled GeoTIFFs are NOT safe for concurrent
+    # random writes -- the tile-offset index gets corrupted, causing
+    # "IReadBlock failed / TIFFReadEncodedTile failed" and stripe artefacts.
+    #
+    # Solution: write to UNCOMPRESSED strip GeoTIFFs during processing
+    # (strip layout = sequential byte offsets, safe for concurrent writes),
+    # then recompress to a final tiled DEFLATE GeoTIFF in one serial pass.
     out_transform = rasterio.transform.from_origin(
         dem_origin_x + win_col_off * res,
         dem_origin_y - win_row_off * res,
         res, res
     )
     out_nodata = CONFIG["OUT_NODATA"]
-    out_meta = dem_meta.copy()
-    out_meta.update({
-        'driver':     'GTiff',
-        'dtype':      'uint8',
-        'count':       1,
-        'height':      out_rows,
-        'width':       out_cols,
-        'transform':   out_transform,
-        'compress':    CONFIG["COMPRESSION"],
-        'predictor':   CONFIG["PREDICTOR"],
-        'nodata':      out_nodata,
-        'tiled':       True,
-        'blockxsize':  256,
-        'blockysize':  256,
+
+    # Shared base metadata
+    base_meta = dem_meta.copy()
+    base_meta.update({
+        'driver':    'GTiff',
+        'dtype':     'uint8',
+        'count':      1,
+        'height':     out_rows,
+        'width':      out_cols,
+        'transform':  out_transform,
+        'nodata':     out_nodata,
     })
 
-    shadow_path    = str(out_path / f"shadow_{ts_str}_{dem_path.stem}_CH_buf{int(buffer_m)}m.tif")
-    incidence_path = str(out_path / f"incidence_angle_{ts_str}_{dem_path.stem}_CH_buf{int(buffer_m)}m.tif")
+    # Uncompressed strip layout for safe concurrent writes
+    tmp_meta = base_meta.copy()
+    tmp_meta.update({'compress': 'none', 'tiled': False})
+    tmp_meta.pop('blockxsize', None)
+    tmp_meta.pop('blockysize', None)
+    tmp_meta.pop('predictor',  None)
+
+    # Final compressed tiled layout (written serially at the end)
+    final_meta = base_meta.copy()
+    final_meta.update({
+        'compress':   CONFIG["COMPRESSION"],
+        'predictor':  CONFIG["PREDICTOR"],
+        'tiled':      True,
+        'blockxsize': 256,
+        'blockysize': 256,
+    })
+
+    stem = f"{ts_str}_{dem_path.stem}_CH_buf{int(buffer_m)}m"
+    shadow_tmp     = str(out_path / f"shadow_{stem}_tmp.tif")
+    incidence_tmp  = str(out_path / f"incidence_angle_{stem}_tmp.tif")
+    shadow_path    = str(out_path / f"shadow_{stem}.tif")
+    incidence_path = str(out_path / f"incidence_angle_{stem}.tif")
 
     fill = np.full((out_rows, out_cols), out_nodata, dtype=np.uint8)
-    for p in [shadow_path, incidence_path]:
-        with rasterio.open(p, 'w', **out_meta) as dst:
+    for p in [shadow_tmp, incidence_tmp]:
+        with rasterio.open(p, 'w', **tmp_meta) as dst:
             dst.write(fill, 1)
 
-    print(f"\nOutput files created (pre-filled with nodata={out_nodata}):")
-    print(f"  {shadow_path}")
-    print(f"  {incidence_path}")
+    print(f"\nTemp (uncompressed) files created:")
+    print(f"  {shadow_tmp}")
+    print(f"  {incidence_tmp}")
 
     # ---- Build tile list (coordinates relative to output window) ------------
+    # Workers write to the UNCOMPRESSED tmp files (safe for concurrent access)
     tiles = []
     r = 0
     while r < out_rows:
@@ -552,7 +578,7 @@ def main():
         while c < out_cols:
             tile_w = min(TILE_SIZE, out_cols - c)
             tiles.append((
-                str(dem_path), shadow_path, incidence_path,
+                str(dem_path), shadow_tmp, incidence_tmp,   # <-- tmp paths
                 r, c, tile_h, tile_w,
                 out_rows, out_cols,
                 win_row_off, win_col_off,
@@ -570,7 +596,7 @@ def main():
     n_workers = CONFIG["N_WORKERS"] or os.cpu_count()
     print(f"\nDispatching {n_tiles} tiles across {n_workers} workers ...")
 
-    # ---- Parallel tile processing -------------------------------------------
+    # ---- Parallel tile processing (writes to uncompressed tmp files) --------
     completed = 0
     failed    = 0
     with ProcessPoolExecutor(max_workers=n_workers) as pool:
@@ -592,9 +618,29 @@ def main():
 
     status = "Done" if failed == 0 else f"Done with {failed} failed tiles"
     print(f"\n{status}  ({completed}/{n_tiles} tiles OK)")
-    print(f"\nOutputs (nodata={out_nodata} outside boundary polygon):")
+
+    # ---- Serial recompression pass ------------------------------------------
+    # Read each uncompressed tmp file and write final compressed tiled COG.
+    # Fast sequential I/O only -- no computation, typically < 1 min.
+    print("\nRecompressing to final tiled DEFLATE GeoTIFFs ...")
+    for tmp_p, final_p, label in [
+        (shadow_tmp,    shadow_path,    "shadow"),
+        (incidence_tmp, incidence_path, "incidence"),
+    ]:
+        print(f"  {label}: {Path(final_p).name} ...", end=" ", flush=True)
+        with rasterio.open(tmp_p) as src:
+            data = src.read(1)
+        with rasterio.open(final_p, 'w', **final_meta) as dst:
+            dst.write(data, 1)
+        try:
+            os.remove(tmp_p)
+        except OSError:
+            pass
+        print("done")
+
+    print(f"\nFinal outputs (nodata={out_nodata} outside boundary polygon):")
     print(f"  shadow     : 0=shadow  1=lit  {out_nodata}=outside boundary")
-    print(f"  incidence  : 0-90deg   90 in shadow   {out_nodata}=outside boundary")
+    print(f"  incidence  : 0-90 deg  90 in shadow  {out_nodata}=outside boundary")
     print(f"  {shadow_path}")
     print(f"  {incidence_path}")
 
@@ -610,7 +656,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         sys.argv = [
             "shadow_fast.py",
-            "20231223t1041",
+            "20251228t1014",
             r"D:\temp\github\topo-satromo-v2\local_assets\DSM_10m_EPSG2056_CH_clipped_10km.tif",
             r"D:\temp\github\topo-satromo-v2\assets\swissboundary_buffer_5000m_22.gpkg",
             r"D:\temp\shadow_output",
